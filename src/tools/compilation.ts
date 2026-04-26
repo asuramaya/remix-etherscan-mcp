@@ -239,4 +239,123 @@ export function registerCompilation(server: McpServer, remixd: RemixdManager): v
       return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("COMPILE_ERROR", e.message ?? err)) }], isError: true };
     }
   });
+
+  // N5 — run_forge_test
+  server.registerTool("run_forge_test", {
+    description: "Run Forge tests in the workspace. Returns per-test pass/fail status and gas usage.",
+    inputSchema: z.object({
+      match_test:     z.string().optional().describe("Filter tests by name (passed to --match-test)"),
+      match_contract: z.string().optional().describe("Filter by contract name (--match-contract)"),
+      verbosity:      z.number().int().min(1).max(5).optional().describe("Verbosity level 1-5 (default 2)"),
+    }),
+  }, async (args) => {
+    const cwd = remixd.sharedFolder;
+    try {
+      const forgeArgs = [
+        "test",
+        "--json",
+        `-${"v".repeat(args.verbosity ?? 2)}`,
+        ...(args.match_test     ? ["--match-test",     args.match_test]     : []),
+        ...(args.match_contract ? ["--match-contract",  args.match_contract] : []),
+      ];
+
+      const { stdout, stderr } = await execFileAsync("forge", forgeArgs, { cwd, timeout: TIMEOUT })
+        .catch(e => e as { stdout: string; stderr: string; code?: number });
+
+      let suite: object = {};
+      let passed = 0, failed = 0;
+      try {
+        const parsed = JSON.parse(stdout) as Record<string, { test_results?: Record<string, { status: string; gas?: number }> }>;
+        for (const [, contract] of Object.entries(parsed)) {
+          for (const [, result] of Object.entries(contract.test_results ?? {})) {
+            if (result.status === "Success") passed++; else failed++;
+          }
+        }
+        suite = parsed;
+      } catch { /* non-JSON output */ }
+
+      return { content: [{ type: "text" as const, text: JSON.stringify({ passed, failed, suite, stderr }, null, 2) }] };
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("TEST_ERROR", e.message ?? err)) }], isError: true };
+    }
+  });
+
+  // N6 — run_hardhat_test
+  server.registerTool("run_hardhat_test", {
+    description: "Run Hardhat tests in the workspace using `npx hardhat test`.",
+    inputSchema: z.object({
+      test_files: z.array(z.string()).optional().describe("Specific test files to run (relative paths)"),
+      grep:       z.string().optional().describe("Only run tests matching this string (--grep)"),
+    }),
+  }, async (args) => {
+    const cwd = remixd.sharedFolder;
+    try {
+      const hardhatArgs = [
+        "hardhat", "test",
+        ...(args.grep       ? ["--grep", args.grep]          : []),
+        ...(args.test_files ?? []),
+      ];
+
+      const { stdout, stderr } = await execFileAsync("npx", hardhatArgs, { cwd, timeout: TIMEOUT })
+        .catch(e => e as { stdout: string; stderr: string; code?: number });
+
+      const passMatch  = /(\d+) passing/i.exec(stdout + stderr);
+      const failMatch  = /(\d+) failing/i.exec(stdout + stderr);
+      const pendMatch  = /(\d+) pending/i.exec(stdout + stderr);
+
+      return { content: [{ type: "text" as const, text: JSON.stringify({
+        passed:  passMatch  ? parseInt(passMatch[1]!, 10)  : null,
+        failed:  failMatch  ? parseInt(failMatch[1]!, 10)  : null,
+        pending: pendMatch  ? parseInt(pendMatch[1]!, 10)  : null,
+        output:  (stdout + stderr).trim(),
+      }, null, 2) }] };
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("TEST_ERROR", e.message ?? err)) }], isError: true };
+    }
+  });
+
+  // N7 — compile_vyper
+  server.registerTool("compile_vyper", {
+    description: "Compile a Vyper contract file using the `vyper` CLI. Returns ABI and bytecode.",
+    inputSchema: z.object({
+      file:    z.string().describe("Relative path to the .vy file in the workspace"),
+      format:  z.enum(["abi", "bytecode", "abi,bytecode"]).optional().describe("Output format (default: abi,bytecode)"),
+    }),
+  }, async (args) => {
+    const cwd = remixd.sharedFolder;
+    try {
+      const fmt   = args.format ?? "abi,bytecode";
+      const parts = fmt.split(",").flatMap(f => ["-f", f.trim()]);
+
+      const { stdout, stderr } = await execFileAsync("vyper", [...parts, args.file], { cwd, timeout: TIMEOUT })
+        .catch(e => e as { stdout: string; stderr: string });
+
+      if (stderr && !stdout) {
+        const diags = stderr.split("\n").filter(Boolean).map(line => {
+          const m = /^(.+):(\d+):(\d+): (\w+): (.+)$/.exec(line);
+          return m ? { file: m[1], line: parseInt(m[2]!, 10), col: parseInt(m[3]!, 10), severity: m[4]!.toLowerCase(), message: m[5]! } : { message: line };
+        });
+        return { content: [{ type: "text" as const, text: JSON.stringify({ success: false, diagnostics: diags }) }], isError: true };
+      }
+
+      let abi: object[] | undefined;
+      let bytecode: string | undefined;
+
+      if (fmt.includes("abi")) {
+        const m = /^\[.*\]$/m.exec(stdout);
+        if (m) { try { abi = JSON.parse(m[0]) as object[]; } catch { /* ignore */ } }
+      }
+      if (fmt.includes("bytecode")) {
+        const m = /0x[0-9a-fA-F]+/.exec(stdout);
+        if (m) bytecode = m[0];
+      }
+
+      return { content: [{ type: "text" as const, text: JSON.stringify({ success: true, file: args.file, abi, bytecode, raw: stdout }, null, 2) }] };
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("COMPILE_ERROR", e.message ?? err)) }], isError: true };
+    }
+  });
 }

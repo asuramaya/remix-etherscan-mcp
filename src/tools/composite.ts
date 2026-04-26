@@ -453,6 +453,7 @@ export function registerComposite(server: McpServer, es: EtherscanClient, remixd
       topic0:        z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional(),
       abi:           z.array(z.record(z.unknown())).optional().describe("ABI fragment array for decoding log events."),
       from_block:    z.number().int().nonnegative().optional(),
+      max_blocks:    z.number().int().positive().optional().describe("Max blocks to scan per call (caps toBlock = fromBlock + max_blocks). Prevents huge scans on first call."),
       page_size:     z.number().int().positive().max(1000).optional(),
       reset_cursor:  z.boolean().optional(),
     }),
@@ -465,12 +466,15 @@ export function registerComposite(server: McpServer, es: EtherscanClient, remixd
 
       const storedCursor = getCursor(args.address, cid, args.topic0);
       const fromBlock = storedCursor ?? args.from_block ?? 0;
+      const toBlock   = args.max_blocks !== undefined
+        ? (fromBlock + args.max_blocks).toString()
+        : "latest";
 
       type LogEntry = { blockNumber: string; transactionHash: string; topics: string[]; data: string; logIndex: string };
       const params: Record<string, string | number | boolean | undefined> = {
         address:   args.address,
         fromBlock: fromBlock.toString(),
-        toBlock:   "latest",
+        toBlock,
         page:      "1",
         offset:    pageSize.toString(),
       };
@@ -497,6 +501,64 @@ export function registerComposite(server: McpServer, es: EtherscanClient, remixd
         new_logs:     newLogs,
         cursor_block: cursorBlock,
         log_count:    newLogs.length,
+      })) }] };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("ETHERSCAN_API_ERROR", err)) }], isError: true };
+    }
+  });
+
+  // O7 — get_events
+  server.registerTool("get_events", {
+    description: "Fetch and decode historical events for a contract over a block range. Paginates automatically and decodes logs against the provided ABI.",
+    inputSchema: z.object({
+      address,
+      chain_id:   chainId,
+      topic0:     z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional().describe("Event topic0 filter (keccak256 of event signature)"),
+      from_block: z.number().int().nonnegative().describe("Start block (inclusive)"),
+      to_block:   z.union([z.number().int().nonnegative(), z.literal("latest")]).optional().describe("End block (default: latest)"),
+      abi:        z.array(z.record(z.unknown())).optional().describe("ABI to decode matching events"),
+      page_size:  z.number().int().positive().max(1000).optional().describe("Logs per page (default 200, max 1000)"),
+      max_pages:  z.number().int().positive().max(20).optional().describe("Maximum pages to fetch (default 5, max 20). Total logs = page_size × max_pages."),
+    }),
+  }, async (args) => {
+    try {
+      const cid      = args.chain_id ?? 1;
+      const pageSize = args.page_size ?? 200;
+      const maxPages = args.max_pages ?? 5;
+
+      type LogEntry = { blockNumber: string; transactionHash: string; topics: string[]; data: string; logIndex: string; address: string };
+      const allLogs: LogEntry[] = [];
+
+      for (let page = 1; page <= maxPages; page++) {
+        const params: Record<string, string | number | boolean | undefined> = {
+          address:   args.address,
+          fromBlock: args.from_block.toString(),
+          toBlock:   (args.to_block ?? "latest").toString(),
+          page:      page.toString(),
+          offset:    pageSize.toString(),
+        };
+        if (args.topic0) params["topic0"] = args.topic0;
+
+        const batch = await es.get<LogEntry[]>("logs", "getLogs", params, cid);
+        allLogs.push(...batch);
+        if (batch.length < pageSize) break; // last page
+      }
+
+      const abiArr = (args.abi ?? []) as object[];
+      const decoded = allLogs.map(log => {
+        try { return { ...log, decoded: decodeLog(abiArr, log.topics, log.data) }; }
+        catch { return log; }
+      });
+
+      const blockMin = allLogs.length > 0 ? parseInt(allLogs[0]!.blockNumber, 16) : null;
+      const blockMax = allLogs.length > 0 ? parseInt(allLogs[allLogs.length - 1]!.blockNumber, 16) : null;
+
+      return { content: [{ type: "text" as const, text: JSON.stringify(serialise({
+        log_count:   decoded.length,
+        from_block:  args.from_block,
+        to_block:    args.to_block ?? "latest",
+        block_range: blockMin !== null ? { min: blockMin, max: blockMax } : null,
+        logs:        decoded,
       })) }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("ETHERSCAN_API_ERROR", err)) }], isError: true };

@@ -3,12 +3,16 @@ export const ErrorCode = {
   REMIXD_NOT_RUNNING:  "REMIXD_NOT_RUNNING",
   FILE_NOT_FOUND:      "FILE_NOT_FOUND",
   COMPILE_ERROR:       "COMPILE_ERROR",
+  TEST_ERROR:          "TEST_ERROR",
   NOT_VERIFIED:        "NOT_VERIFIED",
   RATE_LIMITED:        "RATE_LIMITED",
   NETWORK_ERROR:       "NETWORK_ERROR",
   INVALID_PARAMS:      "INVALID_PARAMS",
   PATH_TRAVERSAL:      "PATH_TRAVERSAL",
   READ_ONLY_MODE:      "READ_ONLY_MODE",
+  DECODE_ERROR:        "DECODE_ERROR",
+  NOT_FOUND:           "NOT_FOUND",
+  SOURCIFY_ERROR:      "SOURCIFY_ERROR",
 } as const;
 
 export type ErrorCodeKey = keyof typeof ErrorCode;

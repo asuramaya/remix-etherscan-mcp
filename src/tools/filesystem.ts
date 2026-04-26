@@ -182,4 +182,20 @@ export function registerFilesystem(server: McpServer, fsc: FSClient): void {
       return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("READ_ONLY_MODE", err)) }], isError: true };
     }
   });
+
+  // L13 — fs_diff
+  server.registerTool("fs_diff", {
+    description: "Generate a unified diff between two files in the workspace. Returns the patch text and hunk count.",
+    inputSchema: z.object({
+      src:  z.string().describe("Source file path (relative to workspace)"),
+      dest: z.string().describe("Destination file path (relative to workspace)"),
+    }),
+  }, async (args) => {
+    try {
+      const result = await fsc.diff(args.src, args.dest);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("FILE_NOT_FOUND", err)) }], isError: true };
+    }
+  });
 }

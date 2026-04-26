@@ -19,6 +19,7 @@ import { registerFilesystem }      from "./filesystem.js";
 import { registerGit }             from "./git.js";
 import { registerCompilation }     from "./compilation.js";
 import { registerComposite }       from "./composite.js";
+import { registerAnalysis }        from "./analysis.js";
 
 export function registerAllTools(
   server:  McpServer,
@@ -42,4 +43,5 @@ export function registerAllTools(
   registerGit(server, remixd);
   registerCompilation(server, remixd);
   registerComposite(server, es, remixd, fsc);
+  registerAnalysis(server, es);
 }

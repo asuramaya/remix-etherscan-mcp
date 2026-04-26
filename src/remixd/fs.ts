@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createTwoFilesPatch } from "diff";
 import { ErrorCode } from "../errors.js";
 import type { RemixdManager } from "./manager.js";
 
@@ -261,6 +262,20 @@ export class FSClient {
         }
       }
     }
+  }
+
+  async diff(srcPath: string, destPath: string): Promise<{ src: string; dest: string; patch: string; hunks: number }> {
+    const srcAbs  = this.safe(srcPath);
+    const destAbs = this.safe(destPath);
+
+    const [srcText, destText] = await Promise.all([
+      fs.readFile(srcAbs,  "utf8").catch(() => ""),
+      fs.readFile(destAbs, "utf8").catch(() => ""),
+    ]);
+
+    const patch = createTwoFilesPatch(srcPath, destPath, srcText, destText);
+    const hunks = (patch.match(/^@@/gm) ?? []).length;
+    return { src: srcPath, dest: destPath, patch, hunks };
   }
 
   get rootPath(): string { return this.root; }

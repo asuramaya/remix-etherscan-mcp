@@ -248,4 +248,50 @@ export function registerContracts(server: McpServer, es: EtherscanClient, config
       return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("ETHERSCAN_API_ERROR", err)) }], isError: true };
     }
   });
+
+  // B10 — sourcify_submit
+  server.registerTool("sourcify_submit", {
+    description: "Submit a contract for verification on Sourcify. Uploads source files and compiler metadata.",
+    inputSchema: z.object({
+      chain_id:         z.number().int().positive().describe("EVM chain ID (e.g. 1 for Ethereum mainnet)"),
+      contract_address: address,
+      files:            z.record(z.string()).describe("Map of filename → file content (must include metadata.json)"),
+    }),
+  }, async (args) => {
+    try {
+      const formData = new FormData();
+      formData.append("address", args.contract_address);
+      formData.append("chain",   String(args.chain_id));
+
+      for (const [name, content] of Object.entries(args.files)) {
+        formData.append("files", new Blob([content], { type: "text/plain" }), name);
+      }
+
+      const res = await fetch("https://sourcify.dev/server/verify", {
+        method: "POST",
+        body:   formData,
+      });
+
+      const body = await res.json() as object;
+      if (!res.ok) {
+        return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("SOURCIFY_ERROR", body)) }], isError: true };
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(body, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("SOURCIFY_ERROR", err)) }], isError: true };
+    }
+  });
+
+  // B11 — get_similar_contracts
+  server.registerTool("get_similar_contracts", {
+    description: "Find contracts on Etherscan with bytecode similar to the given address.",
+    inputSchema: z.object({ address, chain_id: chainId }),
+  }, async (args) => {
+    try {
+      const raw = await es.get<object[]>("contract", "getsimilarcode", { address: args.address }, args.chain_id);
+      return { content: [{ type: "text" as const, text: JSON.stringify(raw, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("ETHERSCAN_API_ERROR", err)) }], isError: true };
+    }
+  });
 }
