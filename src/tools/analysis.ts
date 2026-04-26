@@ -8,10 +8,10 @@ import { mcpError } from "../errors.js";
 import { address, chainId } from "./schemas.js";
 
 // ── well-known revert selectors ───────────────────────────────────────────────
-const SEL_ERROR  = "0x08c379a0"; // Error(string)
-const SEL_PANIC  = "0x4e487b71"; // Panic(uint256)
+const SEL_ERROR = "0x08c379a0"; // Error(string)
+const SEL_PANIC = "0x4e487b71"; // Panic(uint256)
 
-const PANIC_CODES: Record<number, string> = {
+export const PANIC_CODES: Record<number, string> = {
   0x00: "generic compiler panic",
   0x01: "assertion failed",
   0x11: "arithmetic overflow/underflow",
@@ -32,7 +32,7 @@ interface StorageEntry {
   type:   string;
 }
 
-interface StorageType {
+export interface StorageType {
   encoding:      string;
   label:         string;
   numberOfBytes: string;
@@ -43,7 +43,9 @@ interface StorageLayout {
   types:   Record<string, StorageType>;
 }
 
-function decodeSlotValue(hex: string, typeInfo: StorageType, offset: number): unknown {
+// ── exported pure helpers (tested directly) ───────────────────────────────────
+
+export function decodeSlotValue(hex: string, typeInfo: StorageType, offset: number): unknown {
   const bytes = parseInt(typeInfo.numberOfBytes, 10);
   const full  = hex.startsWith("0x") ? hex.slice(2) : hex;
   // Slot is big-endian 32 bytes; offset is from the right (low bytes)
@@ -55,7 +57,7 @@ function decodeSlotValue(hex: string, typeInfo: StorageType, offset: number): un
   if (label === "address") return "0x" + slice.slice(-40);
   if (label.startsWith("uint")) return BigInt("0x" + (slice || "0")).toString();
   if (label.startsWith("int")) {
-    const raw = BigInt("0x" + (slice || "0"));
+    const raw  = BigInt("0x" + (slice || "0"));
     const bits = bytes * 8;
     const max  = 1n << BigInt(bits - 1);
     return (raw >= max ? raw - (1n << BigInt(bits)) : raw).toString();
@@ -63,6 +65,126 @@ function decodeSlotValue(hex: string, typeInfo: StorageType, offset: number): un
   if (label.startsWith("bytes")) return "0x" + slice;
   return "0x" + slice;
 }
+
+export interface RevertInfo {
+  type:      "empty" | "Error" | "Panic" | "custom" | "unknown";
+  message?:  string;
+  code?:     string;
+  name?:     string;
+  args?:     Record<string, unknown>;
+  selector?: string;
+  raw?:      string;
+}
+
+export function decodeRevert(data: string, abi?: object[]): RevertInfo {
+  if (!data || data === "0x") {
+    return { type: "empty", message: "revert with no data" };
+  }
+
+  const sel = data.slice(0, 10).toLowerCase();
+
+  if (sel === SEL_ERROR) {
+    try {
+      const iface   = new ethers.Interface(["function Error(string)"]);
+      const decoded = iface.decodeFunctionData("Error", data);
+      return { type: "Error", message: decoded[0] as string };
+    } catch { /* fall through */ }
+  }
+
+  if (sel === SEL_PANIC) {
+    try {
+      const iface   = new ethers.Interface(["function Panic(uint256)"]);
+      const decoded = iface.decodeFunctionData("Panic", data);
+      const code    = Number(decoded[0]);
+      return {
+        type:    "Panic",
+        code:    `0x${code.toString(16)}`,
+        message: PANIC_CODES[code] ?? `unknown panic code 0x${code.toString(16)}`,
+      };
+    } catch { /* fall through */ }
+  }
+
+  if (abi?.length) {
+    try {
+      const errorFragments = (abi as Array<Record<string, unknown>>)
+        .filter(f => f["type"] === "error")
+        .map(f => {
+          const inputs = (f["inputs"] as Array<{ name: string; type: string }> | undefined) ?? [];
+          const params = inputs.map(i => `${i.type} ${i.name}`.trim()).join(", ");
+          return `error ${f["name"] as string}(${params})`;
+        });
+
+      if (errorFragments.length > 0) {
+        const iface = new ethers.Interface(errorFragments);
+        try {
+          const err = iface.parseError(data);
+          if (err) {
+            const argsObj: Record<string, unknown> = {};
+            err.fragment.inputs.forEach((inp, i) => {
+              argsObj[inp.name || String(i)] = serialise(err.args[i]);
+            });
+            return { type: "custom", name: err.name, args: argsObj };
+          }
+        } catch { /* unrecognised selector */ }
+      }
+    } catch { /* ABI parse error */ }
+  }
+
+  return {
+    type:     "unknown",
+    selector: sel,
+    raw:      data,
+    message:  "could not decode — pass an ABI containing the error definition",
+  };
+}
+
+export interface SafeDecodeResult {
+  to:             string;
+  value:          string;
+  data:           string;
+  operation:      number;
+  operation_name: string;
+  safeTxGas:      string;
+  baseGas:        string;
+  gasPrice:       string;
+  gasToken:       string;
+  refundReceiver: string;
+  signatures:     string;
+  inner_decoded?: unknown;
+}
+
+const SAFE_ABI = [
+  "function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) returns (bool)",
+];
+
+export function decodeSafeCalldata(calldata: string, innerAbi?: object[]): SafeDecodeResult {
+  const iface   = new ethers.Interface(SAFE_ABI);
+  const decoded = iface.decodeFunctionData("execTransaction", calldata);
+
+  const result: SafeDecodeResult = {
+    to:             decoded[0] as string,
+    value:          (decoded[1] as bigint).toString(),
+    data:           decoded[2] as string,
+    operation:      Number(decoded[3]),
+    operation_name: Number(decoded[3]) === 0 ? "CALL" : "DELEGATECALL",
+    safeTxGas:      (decoded[4] as bigint).toString(),
+    baseGas:        (decoded[5] as bigint).toString(),
+    gasPrice:       (decoded[6] as bigint).toString(),
+    gasToken:       decoded[7] as string,
+    refundReceiver: decoded[8] as string,
+    signatures:     decoded[9] as string,
+  };
+
+  const innerData = decoded[2] as string;
+  if (innerAbi?.length && innerData && innerData !== "0x") {
+    const innerDecoded = decodeCalldata(innerAbi, innerData);
+    if (innerDecoded) result.inner_decoded = serialise(innerDecoded);
+  }
+
+  return result;
+}
+
+// ── tool registrations ────────────────────────────────────────────────────────
 
 export function registerAnalysis(server: McpServer, es: EtherscanClient): void {
 
@@ -74,71 +196,8 @@ export function registerAnalysis(server: McpServer, es: EtherscanClient): void {
       abi:         z.array(z.record(z.unknown())).optional().describe("ABI containing custom error definitions"),
     }),
   }, async (args) => {
-    const data = args.revert_data;
-
-    // Empty revert
-    if (data === "0x" || data === "") {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ type: "empty", message: "revert with no data" }) }] };
-    }
-
-    const sel = data.slice(0, 10).toLowerCase();
-
-    // Error(string)
-    if (sel === SEL_ERROR) {
-      try {
-        const iface = new ethers.Interface(["function Error(string)"]);
-        const decoded = iface.decodeFunctionData("Error", data);
-        return { content: [{ type: "text" as const, text: JSON.stringify({ type: "Error", message: decoded[0] as string }) }] };
-      } catch { /* fall through */ }
-    }
-
-    // Panic(uint256)
-    if (sel === SEL_PANIC) {
-      try {
-        const iface = new ethers.Interface(["function Panic(uint256)"]);
-        const decoded = iface.decodeFunctionData("Panic", data);
-        const code    = Number(decoded[0]);
-        return { content: [{ type: "text" as const, text: JSON.stringify({
-          type:    "Panic",
-          code:    `0x${code.toString(16)}`,
-          message: PANIC_CODES[code] ?? `unknown panic code 0x${code.toString(16)}`,
-        }) }] };
-      } catch { /* fall through */ }
-    }
-
-    // Custom errors from provided ABI
-    if (args.abi?.length) {
-      try {
-        const errorFragments = (args.abi as Array<Record<string, unknown>>)
-          .filter(f => f["type"] === "error")
-          .map(f => {
-            const inputs = (f["inputs"] as Array<{ name: string; type: string }> | undefined) ?? [];
-            const params = inputs.map(i => `${i.type} ${i.name}`.trim()).join(", ");
-            return `error ${f["name"] as string}(${params})`;
-          });
-
-        if (errorFragments.length > 0) {
-          const iface = new ethers.Interface(errorFragments);
-          try {
-            const err = iface.parseError(data);
-            if (err) {
-              const argsObj: Record<string, unknown> = {};
-              err.fragment.inputs.forEach((inp, i) => {
-                argsObj[inp.name || String(i)] = serialise(err.args[i]);
-              });
-              return { content: [{ type: "text" as const, text: JSON.stringify({ type: "custom", name: err.name, args: argsObj }) }] };
-            }
-          } catch { /* unrecognised selector */ }
-        }
-      } catch { /* ABI parse error */ }
-    }
-
-    return { content: [{ type: "text" as const, text: JSON.stringify({
-      type:     "unknown",
-      selector: sel,
-      raw:      data,
-      message:  "could not decode — pass an ABI containing the error definition",
-    }) }] };
+    const result = decodeRevert(args.revert_data, args.abi as object[] | undefined);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
   });
 
   // ── P2 — decode_storage ─────────────────────────────────────────────────────
@@ -171,7 +230,6 @@ export function registerAnalysis(server: McpServer, es: EtherscanClient): void {
       const results: Record<string, unknown> = {};
       const skipped: string[] = [];
 
-      // Group by slot to minimise RPC calls
       const bySlot = new Map<string, StorageEntry[]>();
       for (const entry of layout.storage) {
         if (!wanted.has(entry.label)) continue;
@@ -213,35 +271,8 @@ export function registerAnalysis(server: McpServer, es: EtherscanClient): void {
       inner_abi: z.array(z.record(z.unknown())).optional().describe("ABI for decoding the `data` field of the inner transaction"),
     }),
   }, async (args) => {
-    const EXEC_TX_SIG = "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)";
-    const SAFE_ABI = [
-      `function ${EXEC_TX_SIG} returns (bool)`,
-    ];
-
     try {
-      const iface   = new ethers.Interface(SAFE_ABI);
-      const decoded = iface.decodeFunctionData("execTransaction", args.calldata);
-
-      const result: Record<string, unknown> = {
-        to:             decoded[0] as string,
-        value:          (decoded[1] as bigint).toString(),
-        data:           decoded[2] as string,
-        operation:      Number(decoded[3]),
-        operation_name: Number(decoded[3]) === 0 ? "CALL" : "DELEGATECALL",
-        safeTxGas:      (decoded[4] as bigint).toString(),
-        baseGas:        (decoded[5] as bigint).toString(),
-        gasPrice:       (decoded[6] as bigint).toString(),
-        gasToken:       decoded[7] as string,
-        refundReceiver: decoded[8] as string,
-        signatures:     decoded[9] as string,
-      };
-
-      const innerData = decoded[2] as string;
-      if (args.inner_abi?.length && innerData && innerData !== "0x") {
-        const innerDecoded = decodeCalldata(args.inner_abi as object[], innerData);
-        if (innerDecoded) result["inner_decoded"] = serialise(innerDecoded);
-      }
-
+      const result = decodeSafeCalldata(args.calldata, args.inner_abi as object[] | undefined);
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
     } catch (err) {
       return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("DECODE_ERROR", err)) }], isError: true };
