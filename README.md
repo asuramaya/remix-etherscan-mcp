@@ -4,29 +4,31 @@ An MCP (Model Context Protocol) server that exposes Ethereum development and aud
 
 ## Overview
 
-The server provides 83 tools organized into 15 categories:
+The server provides 104 tools organized into 17 categories:
 
 - **Accounts** — balances, transaction history, token transfers, mined blocks
-- **Contracts** — source code, ABI, verification, bytecode
+- **Contracts** — source code, ABI, verification, bytecode, Sourcify submission, similar-bytecode search
 - **Transactions** — full objects, receipts, event logs, status
 - **Blocks** — by number, by timestamp, rewards
 - **Logs** — by address, by topics
 - **Tokens** — ERC-20 supply, balances, holders
 - **Gas** — oracle tiers, confirmation time estimation
 - **Stats** — ETH price, supply, daily network metrics (PRO)
-- **Proxy/EVM** — eth_call, storage slots, ENS, batch reads, proxy inspection
+- **Proxy/EVM** — eth_call, storage slots, ENS, batch reads, proxy inspection, `call_contract`, `simulate_transaction`
 - **Chains** — supported chain list, address labels
 - **remixd Lifecycle** — start/stop/status the remixd daemon
-- **Filesystem** — read/write/search the workspace
+- **Filesystem** — read/write/search/diff the workspace
 - **Git** — safe git command execution, structured blame
-- **Compilation** — Hardhat, Truffle, Foundry, Slither
-- **Composite** — fetch-and-open, contract diff, transaction decode, full audit setup, ETH flow tracing, event polling
+- **Compilation** — Hardhat, Truffle, Foundry, Slither, Forge test runner, Hardhat test runner, Vyper
+- **Composite** — fetch-and-open, contract diff, transaction decode, full audit setup, ETH flow tracing, event polling, historical event query
+- **Analysis** — revert data decoder, storage slot reader, Gnosis Safe calldata decoder
+- **ABI Registry** — built-in ABIs for ERC-20/721/1155, WETH, Uniswap V2/V3, Gnosis Safe, Ownable, AccessControl, ERC-4626
 
 ## Prerequisites
 
 - Node.js 20 or later
 - An [Etherscan API key](https://docs.etherscan.io/getting-started/viewing-api-usage-statistics) (free tier works for most tools; PRO required for some)
-- For compilation and analysis tools: `npx` plus the framework tools (`hardhat`, `truffle`, `forge`) installed in the target project, and optionally `slither-analyzer` (Python)
+- For compilation and analysis tools: `npx` plus the framework tools (`hardhat`, `truffle`, `forge`) installed in the target project, and optionally `slither-analyzer` (Python) and `vyper` (for Vyper compilation)
 - For remixd: `@remix-project/remixd` (resolved automatically via `npx --yes` if not found locally)
 
 ## Installation
@@ -156,7 +158,7 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `get_erc1155_transfers` | ERC-1155 multi-token transfer events |
 | `get_mined_blocks` | Blocks validated by an address; includes uncle blocks |
 
-### B — Contracts (9 tools)
+### B — Contracts (11 tools)
 
 | Tool | Description |
 |---|---|
@@ -231,7 +233,7 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `get_node_count` | Total discoverable Ethereum nodes |
 | `get_chain_size` | Blockchain size by client type and sync mode (PRO) |
 
-### I — Proxy/EVM (12 tools)
+### I — Proxy/EVM (14 tools)
 
 | Tool | Description |
 |---|---|
@@ -247,6 +249,8 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `ens_resolve` | ENS name to address via mainnet registry and resolver |
 | `read_proxy_slots` | EIP-1967 and OpenZeppelin proxy storage slots |
 | `eth_get_uncle` | Uncle block by block number and index |
+| `call_contract` | Call any view/pure function by signature — encodes args, calls eth_call, decodes result |
+| `simulate_transaction` | Simulate a state-changing call with a sender and ETH value; decodes reverts automatically |
 
 ### J — Chains (2 tools)
 
@@ -263,7 +267,7 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `remixd_stop` | Stop the running remixd daemon |
 | `remixd_status` | Current status, shared folder, ports, detected frameworks |
 
-### L — Filesystem (12 tools)
+### L — Filesystem (13 tools)
 
 | Tool | Description |
 |---|---|
@@ -287,7 +291,7 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `git_exec` | Run git commands in the workspace; shell operators and dangerous flags blocked |
 | `git_blame` | Structured line-by-line blame: author, commit, timestamp, line content |
 
-### N — Compilation (4 tools)
+### N — Compilation (7 tools)
 
 | Tool | Description |
 |---|---|
@@ -295,8 +299,11 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `compile_truffle` | `npx truffle compile`; reads Truffle-format artifacts |
 | `compile_foundry` | `forge build`; returns gas estimates alongside artifacts |
 | `compile_slither` | Slither static analysis; structured findings by severity |
+| `run_forge_test` | `forge test --json`; per-test pass/fail and gas; supports `--match-test` / `--match-contract` |
+| `run_hardhat_test` | `npx hardhat test`; parses Mocha pass/fail/pending counts |
+| `compile_vyper` | Vyper CLI compilation; returns ABI, bytecode, and structured diagnostics |
 
-### O — Composite (6 tools)
+### O — Composite (7 tools)
 
 | Tool | Description |
 |---|---|
@@ -305,7 +312,23 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `decode_transaction` | Decode calldata and events from a tx hash; auto-fetches ABI |
 | `audit_setup` | Full bootstrap: fetch + write + remixd + Slither; degrades gracefully |
 | `trace_eth_flow` | Internal ETH flow with optional address labels; labels cached 1 hour |
-| `watch_events` | Stateful event poller; cursor persists across server restarts |
+| `watch_events` | Stateful event poller; cursor persists across server restarts; `max_blocks` caps per-poll scan |
+| `get_events` | Paginated historical event fetch over an explicit block range with ABI decoding |
+
+### P — Analysis (3 tools)
+
+| Tool | Description |
+|---|---|
+| `decode_error` | Decode revert data: `Error(string)`, `Panic(uint256)`, custom errors from ABI |
+| `decode_storage` | Read and decode storage variables via solc/forge storage layout JSON |
+| `safe_decode` | Decode Gnosis Safe `execTransaction` calldata; optionally decodes inner `data` against an ABI |
+
+### R — ABI Registry (2 tools)
+
+| Tool | Description |
+|---|---|
+| `abi_list` | List all built-in well-known ABIs by key, name, and description |
+| `abi_get` | Retrieve the full ABI for a built-in contract by key (e.g. `erc20`, `uniswap-v2-pair`) |
 
 ## Architecture
 
@@ -332,20 +355,23 @@ src/
     schemas.ts              Shared Zod primitives: address, txHash, chainId, blockRange, pagination
     registry.ts             registerAllTools(): calls each category's register function
     accounts.ts             A1–A8
-    contracts.ts            B1–B9
+    contracts.ts            B1–B11
     transactions.ts         C1–C4
     blocks.ts               D1–D3
     logs.ts                 E1–E2
     tokens.ts               F1–F6
     gas.ts                  G1–G2
     stats.ts                H1–H15
-    proxy.ts                I1–I12
+    proxy.ts                I1–I12, I13 call_contract, I14 simulate_transaction
     chains.ts               J1–J2
     remixd-lifecycle.ts     K1–K3
-    filesystem.ts           L1–L12
+    filesystem.ts           L1–L13
     git.ts                  M1–M2
-    compilation.ts          N1–N4
-    composite.ts            O1–O6
+    compilation.ts          N1–N7
+    composite.ts            O1–O7
+    analysis.ts             P1–P3, R1–R2
+  abi/
+    registry.ts             9 built-in ABI definitions (ERC-20/721/1155, WETH, Uniswap V2/V3, Safe, Ownable, ERC-4626)
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the startup sequence, request flow, caching strategy, and remixd WebSocket integration details.

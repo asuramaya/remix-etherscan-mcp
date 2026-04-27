@@ -370,6 +370,37 @@ Raw deployed bytecode for any address.
 
 ---
 
+### `sourcify_submit`
+
+Submit source files and compiler metadata to [Sourcify](https://sourcify.dev) for on-chain verification. The `files` map must include `metadata.json` (produced by `solc --metadata` or Foundry/Hardhat during compilation).
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `chain_id` | `integer` | Yes | EVM chain ID |
+| `contract_address` | `string` | Yes | Deployed contract address to verify |
+| `files` | `object` | Yes | Map of filename → file content. Must include `metadata.json`. |
+
+**Response shape:** The raw Sourcify API response, which includes `result[].status` (`"perfect"`, `"partial"`, or `"false"`) and matched addresses.
+
+---
+
+### `get_similar_contracts`
+
+Find contracts on Etherscan with bytecode similar to the given address. Useful for identifying proxy patterns, clones, or forks.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `address` | `string` | Yes | Contract address to compare |
+| `chain_id` | `integer` | No | Chain ID |
+
+**Response shape:** Array of similar contract records from Etherscan (address, similarity score, contract name where available).
+
+---
+
 ## C — Transactions
 
 ### `get_transaction`
@@ -1213,6 +1244,83 @@ Uncle block by block number and uncle index.
 
 ---
 
+### `call_contract`
+
+Call any view or pure function on a deployed contract. Encodes the arguments using the function signature, executes `eth_call`, and decodes the return value — no full ABI JSON required.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `address` | `string` | Yes | Contract address |
+| `function_sig` | `string` | Yes | Function signature with return types. Examples: `"balanceOf(address) returns (uint256)"`, `"name() returns (string)"`, `"getReserves() returns (uint112,uint112,uint32)"` |
+| `args` | `array` | No | Function arguments in order. Addresses as `0x` strings; numbers as strings or JS numbers for small values. |
+| `chain_id` | `integer` | No | Chain ID |
+| `block_tag` | `string` | No | Block tag: `"latest"`, `"earliest"`, `"pending"`, or a hex block number (default: `"latest"`) |
+
+**Response shape:**
+
+```json
+{
+  "address":      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "function_sig": "balanceOf(address) returns (uint256)",
+  "args":         ["0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"],
+  "result":       "1500000000",
+  "raw_hex":      "0x0000000000000000000000000000000000000000000000000000000059682f00"
+}
+```
+
+`result` is the decoded return value (string for uint/int/address, boolean for bool, array for tuple returns). If decoding fails, `result` equals `raw_hex`.
+
+---
+
+### `simulate_transaction`
+
+Simulate a transaction using `eth_call` with a specific sender and optional ETH value. Decodes the return value if a function signature is provided. On revert, automatically decodes the error data via `decode_error` logic.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `to` | `string` | Yes | Target contract address |
+| `from` | `string` | No | Sender address for simulation (sets `msg.sender`) |
+| `function_sig` | `string` | No | Function signature with return types. Omit to send raw data. |
+| `args` | `array` | No | Function arguments (used when `function_sig` is provided) |
+| `data` | `string` | No | Raw calldata hex. Used when `function_sig` is not provided. |
+| `value` | `string` | No | ETH value in wei (hex or decimal string, e.g. `"1000000000000000000"` for 1 ETH) |
+| `chain_id` | `integer` | No | Chain ID |
+| `block_tag` | `string` | No | Block tag (default: `"latest"`) |
+
+**Response shape (success):**
+
+```json
+{
+  "to":           "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "from":         "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+  "function_sig": "transfer(address,uint256) returns (bool)",
+  "reverted":     false,
+  "result":       true,
+  "revert":       null,
+  "raw_hex":      "0x0000000000000000000000000000000000000000000000000000000000000001"
+}
+```
+
+**Response shape (revert):**
+
+```json
+{
+  "to":           "0x...",
+  "from":         "0x...",
+  "function_sig": "transfer(address,uint256) returns (bool)",
+  "reverted":     true,
+  "result":       null,
+  "revert":       { "type": "Error", "message": "ERC20: transfer amount exceeds balance" },
+  "raw_hex":      "0x08c379a0..."
+}
+```
+
+---
+
 ## J — Chains
 
 ### `get_supported_chains`
@@ -1532,6 +1640,32 @@ Copy a file or directory recursively. Creates parent directories at the destinat
 
 ---
 
+### `fs_diff`
+
+Generate a unified diff between two files in the workspace. If either file does not exist it is treated as empty content, producing a one-sided diff.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `src` | `string` | Yes | Source file path (relative to workspace) |
+| `dest` | `string` | Yes | Destination file path (relative to workspace) |
+
+**Response shape:**
+
+```json
+{
+  "src": "contracts/Token.sol",
+  "dest": "contracts/TokenV2.sol",
+  "patch": "===...\n--- contracts/Token.sol\n+++ contracts/TokenV2.sol\n@@...",
+  "hunks": 2
+}
+```
+
+`patch` is a unified diff string produced by the `diff` package. `hunks` is the count of `@@` hunk headers.
+
+---
+
 ## M — Git
 
 ### `git_exec`
@@ -1718,6 +1852,89 @@ If Slither is not installed, the tool returns `{ "available": false, "error": "s
   "stderr": "..."
 }
 ```
+
+---
+
+### `run_forge_test`
+
+Run Forge tests in the remixd workspace using `forge test --json`. Returns structured pass/fail counts and per-suite results.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `match_test` | `string` | No | Filter tests by function name (passed to `--match-test`) |
+| `match_contract` | `string` | No | Filter by contract name (`--match-contract`) |
+| `verbosity` | `integer` | No | Verbosity level 1–5 (default: 2) |
+
+**Response shape:**
+
+```json
+{
+  "passed": 12,
+  "failed": 1,
+  "suite": {
+    "CounterTest": {
+      "test_results": {
+        "test_increment": { "status": "Success", "gas": 25814 },
+        "test_decrement_underflow": { "status": "Failure", "gas": 8042 }
+      }
+    }
+  },
+  "stderr": "..."
+}
+```
+
+---
+
+### `run_hardhat_test`
+
+Run Hardhat tests using `npx hardhat test`. Parses Mocha pass/fail/pending counts from output.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `test_files` | `string[]` | No | Specific test file paths to run (relative) |
+| `grep` | `string` | No | Only run tests matching this string (`--grep`) |
+
+**Response shape:**
+
+```json
+{
+  "passed": 18,
+  "failed": 0,
+  "pending": 2,
+  "output": "  Token contract\n    ✓ should have correct name (42ms)\n    ✓ should transfer tokens\n  18 passing (1s)\n  2 pending"
+}
+```
+
+---
+
+### `compile_vyper`
+
+Compile a Vyper (`.vy`) source file using the `vyper` CLI. Returns ABI, bytecode, and structured diagnostics.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `file` | `string` | Yes | Relative path to the `.vy` file in the workspace |
+| `format` | `string` | No | Output format: `"abi"`, `"bytecode"`, or `"abi,bytecode"` (default: `"abi,bytecode"`) |
+
+**Response shape:**
+
+```json
+{
+  "success": true,
+  "file": "contracts/Token.vy",
+  "abi": [ { "type": "function", "name": "transfer", ... } ],
+  "bytecode": "0x61...",
+  "raw": "..."
+}
+```
+
+On error, `success` is `false` and `diagnostics` contains structured `{ file, line, col, severity, message }` entries.
 
 ---
 
@@ -1943,6 +2160,7 @@ Stateful event poller. Call repeatedly to stream new event logs since the last c
 | `topic0` | `string` | No | Event signature hash to filter (32-byte hex with 0x prefix) |
 | `abi` | `object[]` | No | ABI fragment array for decoding log events |
 | `from_block` | `integer` | No | Starting block for the first call (ignored on subsequent calls; cursor takes precedence) |
+| `max_blocks` | `integer` | No | Cap the scan window: `toBlock = fromBlock + max_blocks`. Prevents unexpectedly large scans on first call. |
 | `page_size` | `integer` | No | Maximum events per call, max 1000 (default: 100) |
 | `reset_cursor` | `boolean` | No | Clear the stored cursor and restart from `from_block` (default: false) |
 
@@ -1966,3 +2184,208 @@ Stateful event poller. Call repeatedly to stream new event logs since the last c
 ```
 
 On the next call, the query starts from `cursor_block`. When `log_count` is 0, the cursor is unchanged and no new events have been emitted.
+
+---
+
+### `get_events`
+
+Fetch and decode historical events for a contract over an explicit block range. Automatically paginates up to `max_pages` to collect more than one page of logs. Unlike `watch_events`, this tool is stateless — it does not maintain a cursor.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `address` | `string` | Yes | Contract address |
+| `chain_id` | `integer` | No | Chain ID |
+| `topic0` | `string` | No | Event signature hash to filter (32-byte hex) |
+| `from_block` | `integer` | Yes | Start block (inclusive) |
+| `to_block` | `integer \| "latest"` | No | End block (default: `"latest"`) |
+| `abi` | `object[]` | No | ABI to decode matching events |
+| `page_size` | `integer` | No | Logs per page, max 1000 (default: 200) |
+| `max_pages` | `integer` | No | Maximum pages to fetch, max 20 (default: 5). Total logs = `page_size × max_pages`. |
+
+**Response shape:**
+
+```json
+{
+  "log_count": 47,
+  "from_block": 19000000,
+  "to_block": "latest",
+  "block_range": { "min": 19000012, "max": 19002341 },
+  "logs": [
+    {
+      "blockNumber": "0x121f50c",
+      "transactionHash": "0x...",
+      "topics": ["0x..."],
+      "data": "0x...",
+      "decoded": { "name": "Transfer", "args": { "from": "0x...", "to": "0x...", "value": "500" } }
+    }
+  ]
+}
+```
+
+---
+
+## P — Analysis
+
+### `decode_error`
+
+Decode hex-encoded revert data from a failed transaction or `eth_call`. Handles the three standard EVM revert formats plus custom errors defined in an ABI.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `revert_data` | `string` | Yes | Hex-encoded revert bytes (e.g. from `eth_call` error result) |
+| `abi` | `object[]` | No | ABI containing `error` type entries for custom error decoding |
+
+**Response shape:**
+
+`Error(string)`:
+```json
+{ "type": "Error", "message": "ERC20: transfer amount exceeds balance" }
+```
+
+`Panic(uint256)`:
+```json
+{ "type": "Panic", "code": "0x11", "message": "arithmetic overflow/underflow" }
+```
+
+Custom error:
+```json
+{ "type": "custom", "name": "InsufficientBalance", "args": { "available": "100", "required": "200" } }
+```
+
+Empty revert (`0x`):
+```json
+{ "type": "empty", "message": "revert with no data" }
+```
+
+Unknown selector:
+```json
+{ "type": "unknown", "selector": "0xdeadbeef", "raw": "0xdeadbeef...", "message": "could not decode — pass an ABI containing the error definition" }
+```
+
+---
+
+### `decode_storage`
+
+Read and decode on-chain storage variables using a solc or Foundry storage layout JSON. Supports all inplace scalar types: `uint`, `int`, `bool`, `address`, `bytesN`. Packed variables at non-zero byte offsets are correctly extracted. Mappings and dynamic arrays cannot be decoded without a key and are reported in `skipped`.
+
+Obtain the storage layout with: `forge inspect <ContractName> storageLayout` or `solc --storage-layout`.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `contract_address` | `string` | Yes | Deployed contract address |
+| `chain_id` | `integer` | No | Chain ID |
+| `layout` | `object` | Yes | Storage layout JSON with `storage` array and `types` map |
+| `variables` | `string[]` | No | Variable names to decode (default: all inplace scalars) |
+
+**Response shape:**
+
+```json
+{
+  "results": {
+    "owner":       "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "totalSupply": "1000000000000000000000",
+    "paused":      false
+  },
+  "skipped": ["_balances", "_allowances"],
+  "address": "0x..."
+}
+```
+
+`skipped` contains variable names whose type is not `inplace` (e.g. mappings, dynamic arrays).
+
+---
+
+### `safe_decode`
+
+Decode Gnosis Safe `execTransaction` calldata into its ten parameters. Optionally decodes the inner `data` field against a provided ABI.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `calldata` | `string` | Yes | `execTransaction` calldata hex |
+| `inner_abi` | `object[]` | No | ABI for decoding the `data` field of the inner transaction |
+
+**Response shape:**
+
+```json
+{
+  "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "value": "0",
+  "data": "0xa9059cbb...",
+  "operation": 0,
+  "operation_name": "CALL",
+  "safeTxGas": "0",
+  "baseGas": "0",
+  "gasPrice": "0",
+  "gasToken": "0x0000000000000000000000000000000000000000",
+  "refundReceiver": "0x0000000000000000000000000000000000000000",
+  "signatures": "0x...",
+  "inner_decoded": {
+    "name": "transfer",
+    "args": { "to": "0x...", "amount": "500000000" }
+  }
+}
+```
+
+`inner_decoded` is only present when `inner_abi` is provided and the selector matches.
+
+---
+
+## R — ABI Registry
+
+### `abi_list`
+
+List all built-in well-known ABIs available in the registry.
+
+**Parameters:** None.
+
+**Response shape:**
+
+```json
+[
+  { "key": "erc20",           "name": "ERC-20",        "description": "Standard ERC-20 fungible token interface (EIP-20)" },
+  { "key": "erc721",          "name": "ERC-721",        "description": "Standard ERC-721 non-fungible token interface (EIP-721)" },
+  { "key": "erc1155",         "name": "ERC-1155",       "description": "Standard ERC-1155 multi-token interface (EIP-1155)" },
+  { "key": "weth",            "name": "WETH9",          "description": "Wrapped Ether (WETH9) — deposit, withdraw, and ERC-20 interface" },
+  { "key": "uniswap-v2-pair", "name": "Uniswap V2 Pair","description": "Uniswap V2 liquidity pair — getReserves, swap, mint, burn" },
+  { "key": "uniswap-v3-pool", "name": "Uniswap V3 Pool","description": "Uniswap V3 pool — slot0, liquidity, swap" },
+  { "key": "gnosis-safe",     "name": "Gnosis Safe",    "description": "Gnosis Safe multisig — execTransaction and core view functions" },
+  { "key": "ownable",         "name": "Ownable",        "description": "OpenZeppelin Ownable — owner, transferOwnership, renounceOwnership" },
+  { "key": "access-control",  "name": "AccessControl",  "description": "OpenZeppelin AccessControl — role management" },
+  { "key": "erc4626",         "name": "ERC-4626",       "description": "Tokenised vault standard (EIP-4626)" }
+]
+```
+
+---
+
+### `abi_get`
+
+Retrieve the full ABI array for a built-in contract. The returned `abi` array is ready to pass to `decode_error`, `decode_storage`, `safe_decode`, `watch_events`, or `get_events`.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `key` | `string` | Yes | ABI key from `abi_list` (case-insensitive, e.g. `"erc20"`, `"uniswap-v2-pair"`) |
+
+**Response shape:**
+
+```json
+{
+  "name": "ERC-20",
+  "description": "Standard ERC-20 fungible token interface (EIP-20)",
+  "abi": [
+    { "type": "function", "name": "transfer", "inputs": [...], "outputs": [...], "stateMutability": "nonpayable" },
+    { "type": "event", "name": "Transfer", "inputs": [...] }
+  ]
+}
+```
+
+Returns a `NOT_FOUND` error if the key is not recognised.
