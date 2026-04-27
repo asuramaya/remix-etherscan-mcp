@@ -25,6 +25,7 @@ import { registerAnalysis }        from "./analysis.js";
 import { registerRpc }             from "./rpc.js";
 import { registerBytecode }        from "./bytecode.js";
 import { registerFork }            from "./fork.js";
+import { registerUniswapV4 }       from "./uniswapv4.js";
 
 export function registerAllTools(
   server:      McpServer,
@@ -54,4 +55,5 @@ export function registerAllTools(
   registerRpc(server, rpcClient);
   registerBytecode(server, es);
   registerFork(server, anvilMgr);
+  registerUniswapV4(server, es, rpcClient);
 }
