@@ -182,6 +182,8 @@ describe("multicall — mock EtherscanClient round-trip", () => {
       remixIdeUrl:      "https://remix.ethereum.org",
       sourcifyFallback: false,
       dbPath:           "/tmp/mc-test.json",
+      rpcUrl:           null,
+      anvilPort:        8545,
     });
 
     // Simulate aggregate3 returning one successful uint256 result

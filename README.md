@@ -4,7 +4,7 @@ An MCP (Model Context Protocol) server that exposes Ethereum development and aud
 
 ## Overview
 
-The server provides 105 tools organized into 17 categories:
+The server provides 119 tools organized into 20 categories:
 
 - **Accounts** — balances, transaction history, token transfers, mined blocks
 - **Contracts** — source code, ABI, verification, bytecode, Sourcify submission, similar-bytecode search
@@ -23,12 +23,18 @@ The server provides 105 tools organized into 17 categories:
 - **Composite** — fetch-and-open, contract diff, transaction decode, full audit setup, ETH flow tracing, event polling, historical event query
 - **Analysis** — revert data decoder, storage slot reader, Gnosis Safe calldata decoder
 - **ABI Registry** — built-in ABIs for ERC-20/721/1155, WETH, Uniswap V2/V3, Gnosis Safe, Ownable, AccessControl, ERC-4626
+- **JSON-RPC** — direct provider calls: `debug_traceTransaction`, `debug_traceCall`, `eth_getProof`, raw passthrough
+- **Bytecode** — selector lookup via 4byte.directory, bytecode fingerprinting (ERC standard detection), Heimdall decompiler
+- **Fork Simulation** — Anvil-backed local fork: impersonate, send, mine, set balance, reset
 
 ## Prerequisites
 
 - Node.js 20 or later
 - An [Etherscan API key](https://docs.etherscan.io/getting-started/viewing-api-usage-statistics) (free tier works for most tools; PRO required for some)
 - For compilation and analysis tools: `npx` plus the framework tools (`hardhat`, `truffle`, `forge`) installed in the target project, and optionally `slither-analyzer` (Python) and `vyper` (for Vyper compilation)
+- For fork simulation tools: [Foundry](https://getfoundry.sh/) (`curl -L https://foundry.paradigm.xyz | bash && foundryup`) — provides the `anvil` binary
+- For bytecode decompilation: `cargo install heimdall-rs` (optional; only needed for `decompile_bytecode`)
+- For JSON-RPC trace/proof tools: an Alchemy, Infura, or Geth-compatible RPC endpoint set via `RPC_URL`
 - For remixd: `@remix-project/remixd` (resolved automatically via `npx --yes` if not found locally)
 
 ## Installation
@@ -65,6 +71,8 @@ All configuration is via environment variables. Only `ETHERSCAN_API_KEY` is requ
 | `SOURCIFY_FALLBACK` | No | `true` | Set to `false` to disable the Sourcify fallback when Etherscan has no verified source for a contract. |
 | `DB_PATH` | No | `~/.remix-etherscan-mcp/store.json` | Path for the persistent key-value store used for caching and event poller cursors. |
 | `MCP_PORT` | No | `3000` | HTTP port when `--http` flag is passed. |
+| `RPC_URL` | No | — | JSON-RPC endpoint (Alchemy, Infura, or public). Required for `debug_trace_transaction`, `trace_call`, `eth_get_proof`, and `rpc_call`. Not needed for Etherscan-backed tools. |
+| `ANVIL_PORT` | No | `8545` | Local port for the Anvil fork node started by `fork_start`. |
 
 See [docs/configuration.md](docs/configuration.md) for full details and examples.
 
@@ -331,6 +339,43 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `abi_list` | List all built-in well-known ABIs by key, name, and description |
 | `abi_get` | Retrieve the full ABI for a built-in contract by key (e.g. `erc20`, `uniswap-v2-pair`) |
 
+### Q — JSON-RPC / Traces (4 tools)
+
+Requires `RPC_URL` to be set. Etherscan does not expose trace or proof APIs.
+
+| Tool | Description |
+|---|---|
+| `debug_trace_transaction` | Full EVM execution trace via `debug_traceTransaction`; supports callTracer (default), prestateTracer, 4byteTracer, structTracer |
+| `trace_call` | Simulate a call at any block via `debug_traceCall` without broadcasting |
+| `eth_get_proof` | Merkle-Patricia proof for account state and specific storage slots (`eth_getProof`) |
+| `rpc_call` | Raw JSON-RPC passthrough to the configured `RPC_URL` for any method not covered above |
+
+### S — Bytecode Analysis (3 tools)
+
+Works on unverified contracts using only the deployed bytecode.
+
+| Tool | Description |
+|---|---|
+| `selector_lookup` | Resolve a 4-byte selector to human-readable signature(s) via 4byte.directory + local known map |
+| `fingerprint_bytecode` | Extract all function selectors, identify known signatures, detect ERC standards (ERC-20/721/1155, Proxy, Ownable, Gnosis Safe, Uniswap, WETH, …) |
+| `decompile_bytecode` | Decompile bytecode to pseudo-Solidity using Heimdall (`cargo install heimdall-rs` required) |
+
+### F — Fork Simulation (9 tools)
+
+Requires `forge`/`anvil` (Foundry) to be installed. All fork tools share a single Anvil subprocess.
+
+| Tool | Description |
+|---|---|
+| `fork_start` | Spawn a local Anvil fork at a specific block; supports any EVM chain via `rpc_url` |
+| `fork_stop` | Stop the Anvil fork and discard all state |
+| `fork_status` | Check whether a fork is running and get its RPC port and block |
+| `fork_call` | Read call on the forked state (reflects all prior `fork_send` mutations) |
+| `fork_impersonate` | Enable/disable sending transactions from any address without a private key |
+| `fork_send` | Send a transaction from an impersonated address; state persists in the fork session |
+| `fork_set_balance` | Set the ETH balance of any address on the fork |
+| `fork_mine` | Mine one or more blocks; optionally set the next block timestamp |
+| `fork_reset` | Reset to a different block or RPC URL without restarting Anvil |
+
 ## Architecture
 
 ```
@@ -346,8 +391,13 @@ src/
     chains.ts               Chain ID map and ETHERSCAN_V2_BASE URL constant
     client.ts               Etherscan API v2 client: GET and POST with retry + error normalization
     sourcify.ts             Sourcify fallback: full_match → partial_match → any
+  rpc/
+    client.ts               JsonRpcClient: direct JSON-RPC 2.0 POST; used for trace/proof tools
+  anvil/
+    manager.ts              AnvilManager: spawn/stop anvil subprocess; expose JsonRpcClient to fork tools
   abi/
     codec.ts                ethers v6 ABI encode/decode for eth_call and log decoding
+    registry.ts             9 built-in ABI definitions (ERC-20/721/1155, WETH, Uniswap V2/V3, Safe, Ownable, ERC-4626)
   remixd/
     manager.ts              Spawn/stop remixd daemon; detect frameworks; manage WS client
     ws-client.ts            WebSocket client implementing the remixd handshake protocol
@@ -363,7 +413,7 @@ src/
     tokens.ts               F1–F6
     gas.ts                  G1–G2
     stats.ts                H1–H15
-    proxy.ts                I1–I12, I13 call_contract, I14 simulate_transaction
+    proxy.ts                I1–I15 (includes multicall, call_contract, simulate_transaction)
     chains.ts               J1–J2
     remixd-lifecycle.ts     K1–K3
     filesystem.ts           L1–L13
@@ -371,8 +421,9 @@ src/
     compilation.ts          N1–N7
     composite.ts            O1–O7
     analysis.ts             P1–P3, R1–R2
-  abi/
-    registry.ts             9 built-in ABI definitions (ERC-20/721/1155, WETH, Uniswap V2/V3, Safe, Ownable, ERC-4626)
+    rpc.ts                  Q1–Q4 (debug_trace_transaction, trace_call, eth_get_proof, rpc_call)
+    bytecode.ts             S1–S3 (selector_lookup, fingerprint_bytecode, decompile_bytecode)
+    fork.ts                 F1–F9 (fork_start … fork_reset)
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the startup sequence, request flow, caching strategy, and remixd WebSocket integration details.

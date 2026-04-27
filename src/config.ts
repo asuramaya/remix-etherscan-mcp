@@ -17,6 +17,8 @@ export const config = Object.freeze({
   remixIdeUrl:      process.env.REMIX_IDE_URL ?? "https://remix.ethereum.org",
   sourcifyFallback: process.env.SOURCIFY_FALLBACK !== "false",
   dbPath:           process.env.DB_PATH ?? defaultDbPath,
+  rpcUrl:           process.env.RPC_URL ?? null,
+  anvilPort:        Number(process.env.ANVIL_PORT ?? "8545"),
 });
 
 export type Config = typeof config;

@@ -16,6 +16,8 @@ const MOCK_CONFIG = {
   remixIdeUrl:      "https://remix.ethereum.org",
   sourcifyFallback: false,
   dbPath:           "/tmp/call-contract-test-store.json",
+  rpcUrl:           null,
+  anvilPort:        8545,
 };
 
 async function makeClient() {

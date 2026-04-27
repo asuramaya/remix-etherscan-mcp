@@ -6,6 +6,8 @@ import { RemixdManager } from "./remixd/manager.js";
 import { FSClient } from "./remixd/fs.js";
 import { registerAllTools } from "./tools/registry.js";
 import { initStore, getStore } from "./db/store.js";
+import { JsonRpcClient } from "./rpc/client.js";
+import { AnvilManager } from "./anvil/manager.js";
 
 const server = new McpServer({
   name:    "remix-etherscan-mcp",
@@ -14,11 +16,13 @@ const server = new McpServer({
 
 initStore(config.dbPath);
 
-const es     = new EtherscanClient(config);
-const remixd = new RemixdManager(config);
-const fsc    = new FSClient(config.remixdWorkspace, config.remixdReadOnly, remixd);
+const es        = new EtherscanClient(config);
+const remixd    = new RemixdManager(config);
+const fsc       = new FSClient(config.remixdWorkspace, config.remixdReadOnly, remixd);
+const rpcClient = config.rpcUrl ? new JsonRpcClient(config.rpcUrl) : null;
+const anvilMgr  = new AnvilManager();
 
-registerAllTools(server, es, remixd, fsc, config);
+registerAllTools(server, es, remixd, fsc, config, rpcClient, anvilMgr);
 
 const useHttp = process.argv.includes("--http");
 const port    = Number(process.env.MCP_PORT ?? 3000);
@@ -26,6 +30,7 @@ const port    = Number(process.env.MCP_PORT ?? 3000);
 function gracefulShutdown(transport?: { close?: () => Promise<void> }) {
   return async () => {
     remixd.stop();
+    anvilMgr.stop();
     if (transport?.close) await transport.close();
     await server.close();
     getStore().flushSync();

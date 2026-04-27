@@ -3,6 +3,8 @@ import type { EtherscanClient } from "../etherscan/client.js";
 import type { RemixdManager } from "../remixd/manager.js";
 import type { FSClient } from "../remixd/fs.js";
 import type { Config } from "../config.js";
+import type { JsonRpcClient } from "../rpc/client.js";
+import type { AnvilManager } from "../anvil/manager.js";
 
 import { registerAccounts }        from "./accounts.js";
 import { registerContracts }       from "./contracts.js";
@@ -20,13 +22,18 @@ import { registerGit }             from "./git.js";
 import { registerCompilation }     from "./compilation.js";
 import { registerComposite }       from "./composite.js";
 import { registerAnalysis }        from "./analysis.js";
+import { registerRpc }             from "./rpc.js";
+import { registerBytecode }        from "./bytecode.js";
+import { registerFork }            from "./fork.js";
 
 export function registerAllTools(
-  server:  McpServer,
-  es:      EtherscanClient,
-  remixd:  RemixdManager,
-  fsc:     FSClient,
-  config:  Config,
+  server:      McpServer,
+  es:          EtherscanClient,
+  remixd:      RemixdManager,
+  fsc:         FSClient,
+  config:      Config,
+  rpcClient:   JsonRpcClient | null,
+  anvilMgr:    AnvilManager,
 ): void {
   registerAccounts(server, es);
   registerContracts(server, es, config);
@@ -44,4 +51,7 @@ export function registerAllTools(
   registerCompilation(server, remixd);
   registerComposite(server, es, remixd, fsc);
   registerAnalysis(server, es);
+  registerRpc(server, rpcClient);
+  registerBytecode(server, es);
+  registerFork(server, anvilMgr);
 }
