@@ -264,7 +264,66 @@ export function registerProxy(server: McpServer, es: EtherscanClient): void {
     }
   });
 
-  // I13 — call_contract
+  // I13 — multicall
+  server.registerTool("multicall", {
+    description: "Batch multiple contract read calls into a single RPC round-trip using Multicall3 (0xcA11bde05977b3631167028862bE2a173976CA11). Each call specifies an address and function signature; results are decoded and returned in order. Deployed on Ethereum, Polygon, Arbitrum, Optimism, Base, Avalanche, BNB Chain, and most other EVM chains.",
+    inputSchema: z.object({
+      calls: z.array(z.object({
+        address:       address.describe("Target contract address"),
+        function_sig:  z.string().describe('Function signature with return types, e.g. "balanceOf(address) returns (uint256)"'),
+        args:          z.array(z.union([z.string(), z.number(), z.boolean(), z.bigint()])).optional().describe("Function arguments in order"),
+        allow_failure: z.boolean().optional().describe("If true, a failed call does not revert the entire batch (default: true)"),
+      })).min(1).max(100).describe("List of calls to batch. Maximum 100."),
+      chain_id:  chainId,
+      block_tag: z.string().optional().describe('Block tag (default: "latest")'),
+    }),
+  }, async (args) => {
+    const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+    const AGGREGATE3_ABI = [
+      "function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) returns (tuple(bool success, bytes returnData)[] returnData)",
+    ];
+
+    try {
+      const cid  = args.chain_id ?? 1;
+      const iface = new ethers.Interface(AGGREGATE3_ABI);
+
+      // Encode each inner call
+      const encodedCalls = args.calls.map(call => ({
+        target:        call.address,
+        allowFailure:  call.allow_failure ?? true,
+        callData:      encodeCall(call.function_sig, (call.args ?? []) as unknown[]),
+      }));
+
+      const calldata = iface.encodeFunctionData("aggregate3", [encodedCalls]);
+
+      const raw = await es.get<string>("proxy", "eth_call", {
+        to:   MULTICALL3,
+        data: calldata,
+        tag:  args.block_tag ?? "latest",
+      }, cid);
+
+      // Decode the aggregate3 return value
+      const decoded = iface.decodeFunctionResult("aggregate3", raw);
+      const results = decoded[0] as Array<{ success: boolean; returnData: string }>;
+
+      const output = results.map((r, i) => {
+        const call = args.calls[i]!;
+        if (!r.success) {
+          const revert = decodeRevert(r.returnData);
+          return { address: call.address, function_sig: call.function_sig, success: false, result: null, revert, raw_hex: r.returnData };
+        }
+        let result: unknown = r.returnData;
+        try { result = serialise(decodeResult(call.function_sig, r.returnData)); } catch { /* leave as raw */ }
+        return { address: call.address, function_sig: call.function_sig, success: true, result, raw_hex: r.returnData };
+      });
+
+      return { content: [{ type: "text" as const, text: JSON.stringify({ call_count: output.length, results: output }, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: "text" as const, text: JSON.stringify(mcpError("ETHERSCAN_API_ERROR", err)) }], isError: true };
+    }
+  });
+
+  // I14 — call_contract
   server.registerTool("call_contract", {
     description: "Call a view or pure function on any contract using eth_call. Encodes arguments, executes the call, and decodes the return value — no ABI JSON required, just the function signature.",
     inputSchema: z.object({

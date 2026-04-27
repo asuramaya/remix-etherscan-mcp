@@ -1244,6 +1244,54 @@ Uncle block by block number and uncle index.
 
 ---
 
+### `multicall`
+
+Batch multiple contract read calls into a single RPC round-trip using [Multicall3](https://github.com/mds1/multicall) deployed at `0xcA11bde05977b3631167028862bE2a173976CA11` on Ethereum, Polygon, Arbitrum, Optimism, Base, Avalanche, BNB Chain, and most other EVM chains.
+
+Each call specifies a target address and function signature. Results are decoded in order. With `allow_failure: true` (the default), a single failed call does not revert the batch — its `success` field is `false` and `revert` contains the decoded error.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `calls` | `object[]` | Yes | Array of calls, min 1 max 100. Each has: `address` (target), `function_sig` (with return types), `args` (optional), `allow_failure` (default: `true`) |
+| `chain_id` | `integer` | No | Chain ID |
+| `block_tag` | `string` | No | Block tag (default: `"latest"`) |
+
+**Response shape:**
+
+```json
+{
+  "call_count": 3,
+  "results": [
+    {
+      "address":      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "function_sig": "name() returns (string)",
+      "success":      true,
+      "result":       "USD Coin",
+      "raw_hex":      "0x0000..."
+    },
+    {
+      "address":      "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "function_sig": "totalSupply() returns (uint256)",
+      "success":      true,
+      "result":       "44000000000000",
+      "raw_hex":      "0x0000..."
+    },
+    {
+      "address":      "0xdead000000000000000000000000000000000000",
+      "function_sig": "owner() returns (address)",
+      "success":      false,
+      "result":       null,
+      "revert":       { "type": "empty", "message": "revert with no data" },
+      "raw_hex":      "0x"
+    }
+  ]
+}
+```
+
+---
+
 ### `call_contract`
 
 Call any view or pure function on a deployed contract. Encodes the arguments using the function signature, executes `eth_call`, and decodes the return value — no full ABI JSON required.

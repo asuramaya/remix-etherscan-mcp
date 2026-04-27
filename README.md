@@ -4,7 +4,7 @@ An MCP (Model Context Protocol) server that exposes Ethereum development and aud
 
 ## Overview
 
-The server provides 104 tools organized into 17 categories:
+The server provides 105 tools organized into 17 categories:
 
 - **Accounts** — balances, transaction history, token transfers, mined blocks
 - **Contracts** — source code, ABI, verification, bytecode, Sourcify submission, similar-bytecode search
@@ -14,7 +14,7 @@ The server provides 104 tools organized into 17 categories:
 - **Tokens** — ERC-20 supply, balances, holders
 - **Gas** — oracle tiers, confirmation time estimation
 - **Stats** — ETH price, supply, daily network metrics (PRO)
-- **Proxy/EVM** — eth_call, storage slots, ENS, batch reads, proxy inspection, `call_contract`, `simulate_transaction`
+- **Proxy/EVM** — eth_call, storage slots, ENS, `multicall` (Multicall3 batch), `call_contract`, `simulate_transaction`, proxy inspection
 - **Chains** — supported chain list, address labels
 - **remixd Lifecycle** — start/stop/status the remixd daemon
 - **Filesystem** — read/write/search/diff the workspace
@@ -233,7 +233,7 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `get_node_count` | Total discoverable Ethereum nodes |
 | `get_chain_size` | Blockchain size by client type and sync mode (PRO) |
 
-### I — Proxy/EVM (14 tools)
+### I — Proxy/EVM (15 tools)
 
 | Tool | Description |
 |---|---|
@@ -249,6 +249,7 @@ claude mcp add remix-etherscan-mcp --transport http --url http://localhost:3000
 | `ens_resolve` | ENS name to address via mainnet registry and resolver |
 | `read_proxy_slots` | EIP-1967 and OpenZeppelin proxy storage slots |
 | `eth_get_uncle` | Uncle block by block number and index |
+| `multicall` | Batch up to 100 contract reads via Multicall3 in a single RPC round-trip |
 | `call_contract` | Call any view/pure function by signature — encodes args, calls eth_call, decodes result |
 | `simulate_transaction` | Simulate a state-changing call with a sender and ETH value; decodes reverts automatically |
 
