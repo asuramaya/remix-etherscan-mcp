@@ -1,5 +1,10 @@
 # remix-etherscan-mcp
 
+
+<p align="center">
+  <img src="docs/remix-etherscan-mcp.png" alt="Chronohorn" width="520">
+</p>
+
 <p align="center">
   <img alt="Status" src="https://img.shields.io/badge/status-active-blue">
   <a href="https://github.com/asuramaya/remix-etherscan-mcp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/asuramaya/remix-etherscan-mcp/actions/workflows/ci.yml/badge.svg"></a>
