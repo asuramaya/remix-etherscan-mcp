@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>remix-etherscan-mcp</title>
+  <meta name="description" content="Ethereum audit and development MCP server: Etherscan, remixd, local workspace tools, compilation, tracing, bytecode analysis, and fork simulation in one surface.">
+  <style>
+    :root {
+      --bg: #071019;
+      --bg-2: #091524;
+      --panel: rgba(10, 19, 31, 0.92);
+      --fg: #e6f0ff;
+      --muted: #93a7c6;
+      --line: rgba(90, 160, 255, 0.16);
+      --accent: #55b8ff;
+      --accent-2: #9a6bff;
+      --accent-3: #ffb14a;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+      --grid: rgba(85, 184, 255, 0.05);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--fg);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      background:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+        radial-gradient(circle at top, rgba(85, 184, 255, 0.18), transparent 28%),
+        radial-gradient(circle at 85% 5%, rgba(154, 107, 255, 0.12), transparent 24%),
+        var(--bg);
+      background-size: 32px 32px, 32px 32px, auto, auto, auto;
+      min-height: 100vh;
+    }
+    a { color: inherit; }
+    .wrap {
+      width: min(1200px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 72px;
+    }
+    .topline, .section-head, .footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: baseline;
+    }
+    .topline {
+      margin-bottom: 26px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.22fr) minmax(320px, 0.82fr);
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+    .hero-copy,
+    .hero-side,
+    .metric,
+    .card,
+    .footer {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(10, 18, 30, 0.95), rgba(8, 14, 24, 0.96));
+      box-shadow: var(--shadow);
+    }
+    .hero-copy {
+      padding: 30px;
+      min-height: 560px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .hero-side {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .kicker, .label {
+      color: var(--accent);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+    }
+    h1 {
+      margin: 18px 0;
+      font-size: clamp(48px, 9vw, 108px);
+      line-height: 0.9;
+      letter-spacing: -0.07em;
+    }
+    .lede {
+      max-width: 15ch;
+      margin: 0 0 18px;
+      font-size: clamp(24px, 4vw, 44px);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+    }
+    .body-copy {
+      max-width: 56ch;
+      margin: 0;
+      color: #cad8f0;
+      font-size: 17px;
+      line-height: 1.72;
+    }
+    .pill-row, .cta-row, .tool-tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .pill-row { margin: 22px 0 28px; }
+    .pill, .tool-tag {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 12px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      background: rgba(85, 184, 255, 0.05);
+    }
+    .tool-tag {
+      color: #d8e8ff;
+      background: rgba(154, 107, 255, 0.07);
+    }
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      text-decoration: none;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      background: rgba(85, 184, 255, 0.04);
+    }
+    .cta.primary {
+      border-color: rgba(85, 184, 255, 0.34);
+      background: linear-gradient(180deg, rgba(85,184,255,0.2), rgba(154,107,255,0.12));
+    }
+    .emblem {
+      min-height: 330px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at 50% 42%, rgba(85,184,255,0.34), transparent 28%),
+        radial-gradient(circle at 20% 30%, rgba(154,107,255,0.18), transparent 18%),
+        radial-gradient(circle at 80% 72%, rgba(255,177,74,0.12), transparent 18%),
+        linear-gradient(180deg, rgba(13, 24, 40, 0.95), rgba(8, 14, 24, 0.98));
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+    }
+    .emblem::before,
+    .emblem::after {
+      content: "";
+      position: absolute;
+      inset: 26px;
+      border: 1px solid rgba(85, 184, 255, 0.18);
+      border-radius: 50%;
+    }
+    .emblem::after {
+      inset: 62px;
+      border-color: rgba(154, 107, 255, 0.14);
+    }
+    .emblem-mark {
+      position: relative;
+      z-index: 1;
+      max-width: 12ch;
+      font-size: 36px;
+      line-height: 1;
+      letter-spacing: -0.06em;
+      text-transform: lowercase;
+    }
+    .emblem-sub {
+      position: relative;
+      z-index: 1;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+    .side-card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(85, 184, 255, 0.035);
+    }
+    .side-card p {
+      margin: 10px 0 0;
+      color: #cad8f0;
+      line-height: 1.68;
+      font-size: 15px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .metric {
+      padding: 18px;
+      min-height: 136px;
+    }
+    .metric-value {
+      margin: 12px 0 10px;
+      font-size: clamp(32px, 4vw, 54px);
+      line-height: 1;
+      letter-spacing: -0.06em;
+    }
+    .metric-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .section { margin-top: 34px; }
+    .section-head {
+      border-top: 1px solid var(--line);
+      padding-top: 18px;
+      margin-bottom: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+    .grid-3, .grid-2 {
+      display: grid;
+      gap: 16px;
+    }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { padding: 18px; }
+    .card h3 {
+      margin: 12px 0 10px;
+      font-size: 24px;
+      letter-spacing: -0.04em;
+    }
+    .card p {
+      margin: 0;
+      color: #cad8f0;
+      font-size: 15px;
+      line-height: 1.68;
+    }
+    ul {
+      margin: 14px 0 0;
+      padding-left: 18px;
+      color: #cad8f0;
+      font-size: 15px;
+      line-height: 1.78;
+    }
+    li + li { margin-top: 6px; }
+    pre {
+      margin: 16px 0 0;
+      padding: 16px;
+      overflow: auto;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(5, 10, 18, 0.72);
+      color: #dceaff;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    code { font-family: inherit; color: var(--accent-3); }
+    .footer {
+      margin-top: 34px;
+      padding: 18px 20px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+    .footer a { text-decoration: none; color: var(--fg); }
+    @media (max-width: 980px) {
+      .hero,
+      .metrics,
+      .grid-3,
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+      .hero-copy { min-height: auto; }
+      h1 { font-size: clamp(48px, 18vw, 96px); }
+      .lede { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topline">
+      <div>remix-etherscan-mcp · ethereum audit surface · claude-drivable</div>
+      <div>etherscan · remixd · rpc · fork simulation</div>
+    </div>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <div>
+          <div class="kicker">one server for the whole contract review loop</div>
+          <h1>remix-etherscan-mcp</h1>
+          <p class="lede">From verified source to local fork in one MCP surface.</p>
+          <p class="body-copy">
+            This server turns Ethereum development and audit work into a single
+            Claude-drivable tool plane. It combines Etherscan API v2, remixd
+            workspace access, filesystem and git operations, compilation,
+            JSON-RPC tracing, bytecode analysis, and Anvil-backed fork simulation.
+          </p>
+          <div class="pill-row">
+            <span class="pill">119 tools</span>
+            <span class="pill">20 categories</span>
+            <span class="pill">stdio</span>
+            <span class="pill">http</span>
+            <span class="pill">local fork</span>
+          </div>
+        </div>
+        <div class="cta-row">
+          <a class="cta primary" href="https://github.com/asuramaya/remix-etherscan-mcp">open repo</a>
+          <a class="cta" href="#install">install</a>
+          <a class="cta" href="#surfaces">tool surfaces</a>
+        </div>
+      </div>
+
+      <aside class="hero-side">
+        <div class="emblem">
+          <div>
+            <div class="emblem-mark">remix ↔ etherscan ↔ mcp</div>
+            <div class="emblem-sub">logo slot ready</div>
+          </div>
+        </div>
+        <div class="side-card">
+          <div class="label">what it replaces</div>
+          <p>
+            Instead of juggling explorers, local files, shell commands, build
+            tools, and fork nodes separately, the project exposes them as one
+            coherent operator surface.
+          </p>
+        </div>
+        <div class="side-card">
+          <div class="label">best use</div>
+          <p>
+            Fast contract inspection, diffing, decode work, compile-and-open
+            flows, and adversarial review on a local fork.
+          </p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="metrics">
+      <div class="metric">
+        <div class="label">tools</div>
+        <div class="metric-value">119</div>
+        <p class="metric-copy">structured MCP tools spanning explorer reads, workspace control, compilation, tracing, and simulation.</p>
+      </div>
+      <div class="metric">
+        <div class="label">categories</div>
+        <div class="metric-value">20</div>
+        <p class="metric-copy">from accounts and contracts to bytecode, ABI registry, JSON-RPC, and local fork control.</p>
+      </div>
+      <div class="metric">
+        <div class="label">transports</div>
+        <div class="metric-value">2</div>
+        <p class="metric-copy">stdio by default for Claude Desktop and Claude Code, plus HTTP streamable transport when needed.</p>
+      </div>
+      <div class="metric">
+        <div class="label">review loop</div>
+        <div class="metric-value">end-to-end</div>
+        <p class="metric-copy">verified source, local files, traces, tests, calldata decode, and forked execution in one place.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>What It Gives You</div>
+        <div>explorer · workspace · execution</div>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="label">explorer surface</div>
+          <h3>Etherscan without tab-hopping</h3>
+          <p>
+            Source code, ABI, logs, token events, balances, proxy slots,
+            block data, gas metrics, and chain metadata become structured calls
+            instead of manual explorer work.
+          </p>
+        </article>
+        <article class="card">
+          <div class="label">workspace surface</div>
+          <h3>remixd, files, and git in the same loop</h3>
+          <p>
+            Open fetched contracts locally, diff them against your workspace,
+            run safe git operations, and keep the file layer close to the
+            explorer layer instead of split across tools.
+          </p>
+        </article>
+        <article class="card">
+          <div class="label">execution surface</div>
+          <h3>Trace, compile, simulate, and fork</h3>
+          <p>
+            Run contract reads, bytecode analysis, compile flows, JSON-RPC trace
+            calls, and Anvil-backed fork simulation when audit work needs more
+            than static inspection.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="surfaces">
+      <div class="section-head">
+        <div>Tool Surfaces</div>
+        <div>read · build · diff · simulate</div>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="label">read</div>
+          <h3>Explorer and chain queries</h3>
+          <div class="tool-tag-row">
+            <span class="tool-tag">accounts</span>
+            <span class="tool-tag">contracts</span>
+            <span class="tool-tag">transactions</span>
+            <span class="tool-tag">blocks</span>
+            <span class="tool-tag">logs</span>
+            <span class="tool-tag">tokens</span>
+          </div>
+          <p>
+            Pull balances, transfers, source, ABI, receipts, logs, supply, and
+            block-level context with validated, typed tool inputs.
+          </p>
+        </article>
+        <article class="card">
+          <div class="label">build</div>
+          <h3>Workspace and compilation flows</h3>
+          <div class="tool-tag-row">
+            <span class="tool-tag">remixd</span>
+            <span class="tool-tag">filesystem</span>
+            <span class="tool-tag">git</span>
+            <span class="tool-tag">hardhat</span>
+            <span class="tool-tag">foundry</span>
+            <span class="tool-tag">slither</span>
+          </div>
+          <p>
+            Fetch contracts into a local workspace, search and diff files, run
+            compilation, and keep the review path close to the code.
+          </p>
+        </article>
+        <article class="card">
+          <div class="label">simulate</div>
+          <h3>RPC, bytecode, and forked execution</h3>
+          <div class="tool-tag-row">
+            <span class="tool-tag">json-rpc</span>
+            <span class="tool-tag">bytecode</span>
+            <span class="tool-tag">proxy</span>
+            <span class="tool-tag">fork</span>
+            <span class="tool-tag">composite</span>
+          </div>
+          <p>
+            Read storage, trace transactions, decode revert data, inspect
+            proxy layouts, decompile bytecode, and run local fork workflows.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>Install</div>
+        <div>node 20+ · stdio first</div>
+      </div>
+      <div class="grid-2">
+        <article class="card" id="install">
+          <div class="label">local install</div>
+          <h3>Build and run the server</h3>
+          <p>
+            The default transport is stdio, which is the normal path for Claude
+            Desktop and Claude Code.
+          </p>
+          <pre>git clone https://github.com/asuramaya/remix-etherscan-mcp.git
+cd remix-etherscan-mcp
+npm install
+npm run build
+
+export ETHERSCAN_API_KEY=your_api_key_here
+node dist/index.js</pre>
+        </article>
+        <article class="card">
+          <div class="label">http mode</div>
+          <h3>Expose the MCP surface over HTTP</h3>
+          <p>
+            If you want streamable HTTP transport, pass <code>--http</code> and
+            set <code>MCP_PORT</code>.
+          </p>
+          <pre>MCP_PORT=3001 node dist/index.js --http</pre>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>Prerequisites</div>
+        <div>optional capabilities stack</div>
+      </div>
+      <div class="grid-2">
+        <article class="card">
+          <div class="label">minimum</div>
+          <h3>Core server requirements</h3>
+          <ul>
+            <li>Node.js 20 or later</li>
+            <li>Etherscan API key for explorer-backed tools</li>
+            <li><code>npx</code> and local framework tools for compilation workflows</li>
+          </ul>
+        </article>
+        <article class="card">
+          <div class="label">optional</div>
+          <h3>Deeper audit capabilities</h3>
+          <ul>
+            <li>Foundry / Anvil for local fork simulation</li>
+            <li>Alchemy, Infura, or Geth-compatible RPC for trace and proof tools</li>
+            <li>Heimdall for bytecode decompilation</li>
+            <li>Slither and Vyper where those tool lanes matter</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>Docs</div>
+        <div>full detail stays in repo</div>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="label">architecture</div>
+          <h3>Server shape and boundaries</h3>
+          <p>See how explorer clients, remixd, RPC, state, and tool registration fit together.</p>
+          <pre><a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/docs/architecture.md">docs/architecture.md</a></pre>
+        </article>
+        <article class="card">
+          <div class="label">configuration</div>
+          <h3>Environment variables and examples</h3>
+          <p>Reference for Etherscan keys, chain selection, workspace paths, RPC URLs, and Anvil settings.</p>
+          <pre><a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/docs/configuration.md">docs/configuration.md</a></pre>
+        </article>
+        <article class="card">
+          <div class="label">tool docs</div>
+          <h3>Category-by-category coverage</h3>
+          <p>The detailed long-form tool listing stays in the repo docs instead of being duplicated here.</p>
+          <pre><a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/docs/tools.md">docs/tools.md</a></pre>
+        </article>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div>remix-etherscan-mcp · explorer + workspace + execution in one mcp plane</div>
+      <div>
+        <a href="https://github.com/asuramaya/remix-etherscan-mcp">repo</a> ·
+        <a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/README.md">readme</a> ·
+        <a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/docs/tools.md">tools</a>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,5 +1,25 @@
 # remix-etherscan-mcp
 
+<p align="center">
+  <img alt="Status" src="https://img.shields.io/badge/status-active-blue">
+  <a href="https://github.com/asuramaya/remix-etherscan-mcp/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/asuramaya/remix-etherscan-mcp/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Node" src="https://img.shields.io/badge/node-20%2B-339933">
+  <img alt="Tools" src="https://img.shields.io/badge/tools-119-7c3aed">
+  <img alt="Categories" src="https://img.shields.io/badge/categories-20-0ea5e9">
+</p>
+
+<p align="center">
+  <a href="https://asuramaya.github.io/remix-etherscan-mcp/"><b>Website</b></a> ·
+  <a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/docs/architecture.md">Architecture</a> ·
+  <a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/docs/configuration.md">Configuration</a> ·
+  <a href="https://github.com/asuramaya/remix-etherscan-mcp/blob/main/docs/tools.md">Tool docs</a>
+</p>
+
+> MCP server for Ethereum development and audit work: Etherscan API v2,
+> remixd workspace access, filesystem and git operations, compilation,
+> JSON-RPC traces, fork simulation, and composite review workflows in one
+> Claude-drivable surface.
+
 An MCP (Model Context Protocol) server that exposes Ethereum development and audit tooling as structured tools for Claude. It wraps the Etherscan API v2, a local remixd filesystem daemon, git operations, contract compilation, and several composite audit workflows into a single server that Claude can drive directly.
 
 ## Overview
