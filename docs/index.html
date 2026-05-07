@@ -151,47 +151,24 @@
       min-height: 330px;
       border: 1px solid var(--line);
       border-radius: 20px;
-      background:
-        radial-gradient(circle at 50% 42%, rgba(85,184,255,0.34), transparent 28%),
-        radial-gradient(circle at 20% 30%, rgba(154,107,255,0.18), transparent 18%),
-        radial-gradient(circle at 80% 72%, rgba(255,177,74,0.12), transparent 18%),
-        linear-gradient(180deg, rgba(13, 24, 40, 0.95), rgba(8, 14, 24, 0.98));
-      position: relative;
+      background: linear-gradient(180deg, rgba(13, 24, 40, 0.95), rgba(8, 14, 24, 0.98));
       overflow: hidden;
-      display: grid;
-      place-items: center;
-      text-align: center;
-      padding: 24px;
+      position: relative;
     }
-    .emblem::before,
+    .emblem img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 330px;
+      object-fit: cover;
+      object-position: center top;
+    }
     .emblem::after {
       content: "";
       position: absolute;
-      inset: 26px;
-      border: 1px solid rgba(85, 184, 255, 0.18);
-      border-radius: 50%;
-    }
-    .emblem::after {
-      inset: 62px;
-      border-color: rgba(154, 107, 255, 0.14);
-    }
-    .emblem-mark {
-      position: relative;
-      z-index: 1;
-      max-width: 12ch;
-      font-size: 36px;
-      line-height: 1;
-      letter-spacing: -0.06em;
-      text-transform: lowercase;
-    }
-    .emblem-sub {
-      position: relative;
-      z-index: 1;
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
+      inset: auto 0 0 0;
+      height: 36%;
+      background: linear-gradient(180deg, transparent, rgba(8, 14, 24, 0.82));
     }
     .side-card {
       border: 1px solid var(--line);
@@ -333,10 +310,7 @@
 
       <aside class="hero-side">
         <div class="emblem">
-          <div>
-            <div class="emblem-mark">remix ↔ etherscan ↔ mcp</div>
-            <div class="emblem-sub">logo slot ready</div>
-          </div>
+          <img src="./remix-etherscan-mcp.png" alt="remix-etherscan-mcp mascot">
         </div>
         <div class="side-card">
           <div class="label">what it replaces</div>
